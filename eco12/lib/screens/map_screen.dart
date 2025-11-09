@@ -1,18 +1,21 @@
-// lib/screens/map_screen.dart (Full Code - Integrasi Pelacakan Jarak)
+// lib/screens/map_screen.dart
 
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart'; 
 import 'package:latlong2/latlong.dart'; 
 import 'package:geolocator/geolocator.dart'; 
-import 'dart:async'; // <-- Import untuk StreamSubscription
+import 'dart:async'; 
 import '../models/ecospot.dart';
 import '../services/ecospot_service.dart';
 import '../services/user_service.dart'; 
 import '../models/user_summary.dart'; 
 import 'qr_scanner_screen.dart'; 
 import 'profile_screen.dart'; 
+import '../widgets/ecospot_detail_modal.dart'; 
+import '../widgets/report_issue_modal.dart'; 
+// import 'package:model_viewer_plus/model_viewer_plus.dart'; // <-- TIDAK DIGUNAKAN LAGI
 
-// Fungsi helper yang sama dengan di modal dan profile screen
+// Fungsi helper yang sama dengan di modal untuk konsistensi ikon
 IconData _getIconData(String? id) {
   switch (id) {
     case 'nature': return Icons.nature_people;
@@ -34,9 +37,10 @@ class MapScreen extends StatefulWidget {
 
 class _MapScreenState extends State<MapScreen> {
   // Tracking State
-  StreamSubscription<Position>? _positionStreamSubscription; // <-- Subskripsi GPS
+  StreamSubscription<Position>? _positionStreamSubscription;
   Position? _lastKnownPosition;
   final UserService _userService = UserService(); 
+  bool _isMoving = false; // <-- STATE BARU untuk Animasi
   
   // Map/UI State
   LatLng _currentLocation = const LatLng(-6.2088, 106.8456); 
@@ -49,18 +53,17 @@ class _MapScreenState extends State<MapScreen> {
   void initState() {
     super.initState();
     _initializeMapData();
-    _startLocationTracking(); // <-- MULAI TRACKING
+    _startLocationTracking(); 
   }
 
   @override
   void dispose() {
-    _positionStreamSubscription?.cancel(); // <-- HENTIKAN TRACKING SAAT KELUAR
+    _positionStreamSubscription?.cancel();
     super.dispose();
   }
 
-  // --- LOGIKA PELACAKAN JARAK ---
+  // --- LOGIKA PELACAKAN JARAK (MENGONTROL ANIMASI) ---
   void _startLocationTracking() {
-    // Konfigurasi stream: jarak minimal 10m, setiap 10 detik
     const LocationSettings locationSettings = LocationSettings(
       accuracy: LocationAccuracy.high,
       distanceFilter: 10, // Update setiap 10 meter
@@ -69,27 +72,33 @@ class _MapScreenState extends State<MapScreen> {
     _positionStreamSubscription = Geolocator.getPositionStream(locationSettings: locationSettings)
         .listen((Position position) {
       
-      // Update posisi peta secara lokal
       if (mounted) {
         setState(() {
           _currentLocation = LatLng(position.latitude, position.longitude);
         });
       }
 
-      // Hitung jarak dan kirim ke backend
       if (_lastKnownPosition != null) {
         double distance = Geolocator.distanceBetween(
           _lastKnownPosition!.latitude,
           _lastKnownPosition!.longitude,
           position.latitude,
           position.longitude,
-        );
+          );
         
-        // Kirim update jarak ke backend
-        if (distance >= 10) { // Kirim ke API hanya jika bergerak > 10m
-          _userService.updateDistance(distance);
-          _userSummaryFuture = _userService.fetchUserSummary(); // Refresh stats XP/GP
-          // print('Distance moved: $distance meters');
+        // Cek apakah pergerakan signifikan (untuk mengaktifkan animasi)
+        if (distance >= 5) { 
+          if (mounted && !_isMoving) { 
+              setState(() { _isMoving = true; }); 
+          }
+          if (distance >= 10) {
+              _userService.updateDistance(distance);
+              _userSummaryFuture = _userService.fetchUserSummary(); 
+          }
+        } else {
+             if (mounted && _isMoving) {
+                 setState(() { _isMoving = false; });
+             }
         }
       }
       
@@ -98,11 +107,32 @@ class _MapScreenState extends State<MapScreen> {
   }
   // --- AKHIR LOGIKA PELACAKAN JARAK ---
 
+
+  // FUNGSI UTAMA: Widget Marker Karakter 2D (MENGGUNAKAN IMAGE.ASSET)
+  Widget _buildAvatarMarker(String? avatarId) {
+      
+      // Menggunakan file gambar (GIF untuk bergerak, JPG untuk diam)
+      final String imageSrc = _isMoving ? 'assets/walk.gif' : 'assets/stay.jpg';
+
+      return SizedBox(
+          width: 80,
+          height: 80,
+          // Menggunakan Image.asset
+          child: Image.asset(
+              imageSrc,
+              fit: BoxFit.contain,
+              // Anda bisa menambahkan key untuk memaksa pembaruan jika ada masalah dengan GIF
+              key: ValueKey(imageSrc), 
+          ),
+      );
+  }
+
+
   Future<void> _initializeMapData() async {
     setState(() {
       _isLoading = true;
     });
-    // Panggil _determinePosition untuk mendapatkan posisi awal
+    // Pastikan Anda juga memiliki izin lokasi di AndroidManifest.xml dan Info.plist!
     await _determinePosition(); 
     await _loadEcoSpots();
     _userSummaryFuture = _userService.fetchUserSummary(); 
@@ -112,7 +142,6 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   Future<void> _determinePosition() async {
-    // ... (Logika izin tetap sama)
     bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) return Future.error('Location services are disabled.');
 
@@ -125,7 +154,6 @@ class _MapScreenState extends State<MapScreen> {
     if (permission == LocationPermission.deniedForever) return Future.error('Location permissions are permanently denied.'); 
 
     Position position = await Geolocator.getCurrentPosition();
-    // Atur posisi awal dan lastKnownPosition
     _lastKnownPosition = position;
     setState(() {
       _currentLocation = LatLng(position.latitude, position.longitude);
@@ -139,6 +167,41 @@ class _MapScreenState extends State<MapScreen> {
     });
   }
 
+  // FUNGSI BARU: Menampilkan Report Issue Modal
+  void _showReportIssueModal(String ecoSpotId) {
+      showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => ReportIssueModal(ecoSpotId: ecoSpotId),
+    ).then((_) {
+        _initializeMapData();
+    });
+  }
+
+
+  // FUNGSI BARU: Menampilkan Modal Detail EcoSpot dan menangani hasilnya
+  void _showEcoSpotDetailModal(EcoSpot spot) async {
+    final result = await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => EcoSpotDetailModal(ecoSpot: spot),
+    );
+
+    if (result is Map && result['action'] == 'report') {
+      _showReportIssueModal(result['ecoSpotId']);
+    }
+    else if (result == true) {
+      _initializeMapData();
+    }
+  }
+
+
   List<Marker> _buildEcoSpotMarkers() {
     return _ecoSpots.map((spot) {
       return Marker(
@@ -151,36 +214,23 @@ class _MapScreenState extends State<MapScreen> {
             color: spot.type == 'Recycling Station' ? Colors.green.shade700 : Colors.red.shade700,
             size: 35,
           ),
-          onPressed: () async {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('Memulai Misi ${spot.name}. Buka Kamera...'))
-            );
-            
-            final result = await Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (context) => QrScannerScreen(missionType: spot.type), 
-              ),
-            );
-
-            if (result == true) {
-              _initializeMapData(); 
-            }
-          },
+          onPressed: () => _showEcoSpotDetailModal(spot), 
         ),
       );
     }).toList();
   }
   
-  // Custom Widget: The embedded User Status Bar (Menggunakan Avatar ID)
+  // Custom Widget: The embedded User Status Bar
   Widget _buildUserStatusBar(UserSummary summary) {
     
-    final String xpText = '${summary.xpProgress} / ${summary.xpRequiredThisLevel} XP';
+    final int xpRequired = summary.xpRequiredThisLevel; 
+    final String xpText = '${summary.xpProgress} / $xpRequired XP';
 
     return GestureDetector(
       onTap: () {
         Navigator.of(context).push(
           MaterialPageRoute(builder: (context) => const ProfileScreen()),
-        ).then((_) => _initializeMapData()); // Refresh data saat kembali dari Profile
+        ).then((_) => _initializeMapData());
       },
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
@@ -205,7 +255,7 @@ class _MapScreenState extends State<MapScreen> {
                 CircleAvatar(
                   radius: 20,
                   backgroundColor: Colors.teal.shade700, 
-                  child: Icon(_getIconData(summary.avatarId), color: Colors.white), // <-- AVATAR ICON DYNAMIC
+                  child: Icon(_getIconData(summary.avatarId), color: Colors.white), 
                 ),
                 Positioned(
                   bottom: 0,
@@ -316,12 +366,14 @@ class _MapScreenState extends State<MapScreen> {
               ),
               MarkerLayer(
                 markers: [
+                  // MARKER AVATAR 2D
                   Marker(
                     point: _currentLocation,
-                    width: 40,
-                    height: 40,
-                    child: const Icon(Icons.my_location, color: Colors.blue, size: 30),
+                    width: 80, 
+                    height: 80,
+                    child: _buildAvatarMarker(null), // Menggunakan Image.asset
                   ),
+                  // MARKER ECOSPOTS
                   ..._buildEcoSpotMarkers(),
                 ],
               ),
@@ -342,7 +394,7 @@ class _MapScreenState extends State<MapScreen> {
                 );
               }
               
-              // Tampilkan ikon refresh saat data gagal dimuat atau loading
+              // Tampilkan ikon refresh saat data gagal dimuat
               return Positioned(
                   top: 50,
                   left: 20,

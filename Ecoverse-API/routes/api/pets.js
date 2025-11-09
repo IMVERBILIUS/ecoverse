@@ -1,4 +1,4 @@
-// Ecoverse-API/routes/api/pets.js
+// Ecoverse-API/routes/api/pets.js (Full Code)
 
 const express = require('express');
 const router = express.Router();
@@ -11,6 +11,7 @@ const PlantPet = require('../../models/PlantPet');
 // @access  Private
 router.get('/my-pet', auth, async (req, res) => {
     try {
+        // Ambil data user termasuk XP dan distanceWalked
         const user = await User.findById(req.user.id).select('distanceWalked plantPets XP greenPoints currentRank');
 
         if (!user) {
@@ -21,7 +22,6 @@ router.get('/my-pet', auth, async (req, res) => {
         const pet = await PlantPet.findOne({ ownerId: user._id, isActive: true });
         
         if (!pet) {
-            // Return null pet data if no pet is currently marked active
             return res.json({
                 userXP: user.XP, userGP: user.greenPoints, userRank: user.currentRank, userDistance: user.distanceWalked,
                 pet: null
@@ -49,7 +49,6 @@ router.get('/inventory', auth, async (req, res) => {
     try {
         const userId = req.user.id;
         
-        // Ambil semua pet yang dimiliki user
         const inventory = await PlantPet.find({ ownerId: userId });
 
         res.json(inventory);
@@ -94,11 +93,11 @@ router.post('/set-active', auth, async (req, res) => {
         // 3. Update daftar pet di User model (Pastikan pet aktif ada di indeks 0)
         await User.findByIdAndUpdate(
             userId,
-            { $pull: { plantPets: newActivePet._id } } // Hapus dari mana pun
+            { $pull: { plantPets: newActivePet._id } }
         );
         await User.findByIdAndUpdate(
             userId,
-            { $unshift: { plantPets: newActivePet._id } } // Tambahkan di awal list
+            { $unshift: { plantPets: newActivePet._id } }
         );
 
 
@@ -112,5 +111,68 @@ router.post('/set-active', auth, async (req, res) => {
         res.status(500).json({ msg: 'Server error during pet activation.' });
     }
 });
+
+
+// @route   POST api/pets/evolve/:petId  <-- ROUTE BARU: EVOLVE PET
+// @desc    Handle pet evolution/growth stage completion
+// @access  Private
+router.post('/evolve/:petId', auth, async (req, res) => {
+    const petId = req.params.petId;
+    const userId = req.user.id;
+
+    try {
+        // 1. Ambil Pet dan User Stats
+        const [pet, user] = await Promise.all([
+            PlantPet.findById(petId),
+            User.findById(userId).select('distanceWalked')
+        ]);
+
+        if (!pet || !user) {
+            return res.status(404).json({ msg: 'Pet or User not found.' });
+        }
+        if (pet.ownerId.toString() !== userId) {
+            return res.status(403).json({ msg: 'Forbidden: Pet does not belong to user.' });
+        }
+
+        // 2. Cek Kondisi Evolusi (Growth Progress)
+        const currentDistance = user.distanceWalked;
+        const requiredDistance = pet.distanceRequired;
+
+        if (currentDistance < requiredDistance) {
+            return res.status(400).json({ msg: `Growth incomplete. Needs ${requiredDistance - currentDistance}m more to evolve.` });
+        }
+
+        // 3. Eksekusi Evolusi
+        const nextDistanceRequired = Math.floor(requiredDistance * 1.5); // Naikkan jarak yang dibutuhkan 50%
+        const newStage = pet.growthStage + 1;
+        
+        // Update Plant Pet: Naikkan stage dan set required distance baru
+        await PlantPet.findByIdAndUpdate(
+            petId,
+            { 
+                $inc: { growthStage: 1 },
+                distanceRequired: nextDistanceRequired,
+                $set: { isActive: true } // Pastikan tetap aktif setelah evolusi
+            }
+        );
+        
+        // Update User: Kurangi jarak yang sudah dipakai
+        await User.findByIdAndUpdate(
+            userId,
+            { $inc: { distanceWalked: -requiredDistance } }
+        );
+
+
+        res.json({ 
+            msg: `${pet.name} evolved to Stage ${newStage}!`,
+            newStage: newStage
+        });
+
+    } catch (err) {
+        console.error('ERROR EVOLVING PET:', err.message);
+        res.status(500).json({ msg: 'Evolution failed due to server error.' });
+    }
+});
+
 
 module.exports = router;

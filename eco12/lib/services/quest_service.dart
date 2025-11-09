@@ -1,4 +1,4 @@
-// lib/services/quest_service.dart
+// lib/services/quest_service.dart (Full Code - FINAL)
 
 import 'dart:convert';
 import 'package:http/http.dart' as http;
@@ -9,44 +9,27 @@ import 'auth_service.dart';
 class QuestService {
   final AuthService _authService = AuthService();
 
-  // Endpoint API untuk mengambil daftar misi
-  static const String _activeQuestsUrl = '${ApiService.baseApiUrl}/quests/active';
-
   Future<List<Quest>> fetchActiveQuests() async {
-    // 1. Dapatkan Token JWT
     final token = await _authService.getToken();
-    if (token == null) {
-      print('QuestService: Authentication token missing.');
-      // Kembalikan list kosong jika user belum login
-      return []; 
-    }
+    if (token == null) return [];
 
     try {
       final response = await http.get(
-        Uri.parse(_activeQuestsUrl),
+        Uri.parse('${ApiService.baseApiUrl}/quests/active'),
         headers: {
           'Content-Type': 'application/json',
-          'x-auth-token': token, // Kirim token untuk otentikasi
+          'x-auth-token': token,
         },
       );
 
       if (response.statusCode == 200) {
-        // Sukses: Parsing JSON menjadi List<Quest>
-        final List<dynamic> jsonList = jsonDecode(response.body);
+        final jsonResponse = jsonDecode(response.body);
+        final List<dynamic> questJsonList = jsonResponse['quests'] ?? [];
+        final Map<String, dynamic> userStats = jsonResponse['userStats'] ?? {}; // <-- Ambil userStats
         
-        // PENTING: Untuk MVP, kita simulasikan userProgress di sini.
-        // Di versi final, API akan mengirim data progress user yang sudah digabungkan.
-        return jsonList.map((json) {
-          // Tambahkan data progress dummy sementara
-          json['userProgress'] = 0.5; 
-          
-          return Quest.fromJson(json);
-        }).toList();
+        // Passing userStats saat mapping
+        return questJsonList.map((json) => Quest.fromJson(json, userStats)).toList();
 
-      } else if (response.statusCode == 401) {
-        print('QuestService: Token invalid or expired.');
-        // TODO: Implementasi logout paksa jika token invalid
-        return [];
       } else {
         print('QuestService: Failed to fetch quests. Status: ${response.statusCode}');
         return [];

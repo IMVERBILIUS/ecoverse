@@ -24,7 +24,10 @@ android {
         applicationId = "com.example.eco12"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
+        
+        // KOREKSI: Mengatur minSdkVersion secara eksplisit ke 21 untuk memastikan kompatibilitas WebView
+        minSdk = 21 
+        
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
@@ -37,7 +40,7 @@ android {
             signingConfig = signingConfigs.getByName("debug")
         }
     }
-}
+} 
 
 flutter {
     source = "../.."

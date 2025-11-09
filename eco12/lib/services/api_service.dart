@@ -2,7 +2,7 @@
 
 class ApiService {
   // GANTI INI: Hanya BASE URL IP dan PORT (Tanpa '/api')
-  static const String baseUrl = 'http://192.168.1.11:5000'; 
+  static const String baseUrl = 'http://192.168.110.78:5000'; 
   
   // Endpoint utama yang akan digunakan untuk semua API calls (misalnya, untuk Mission Service)
   // Mission Service memerlukan ini:

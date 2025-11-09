@@ -1,4 +1,4 @@
-// lib/services/user_service.dart (Full Code - Final)
+// lib/services/user_service.dart
 
 import 'dart:convert';
 import 'package:http/http.dart' as http;
@@ -8,10 +8,16 @@ import 'auth_service.dart';
 
 class UserService {
   final AuthService _authService = AuthService();
+  
+  // Base URLs
   static const String _summaryUrl = '${ApiService.baseApiUrl}/user-data/summary';
   static const String _fullProfileUrl = '${ApiService.baseApiUrl}/user-data/full-profile'; 
   static const String _updateProfileUrl = '${ApiService.baseApiUrl}/user-data/profile';
   static const String _updateDistanceUrl = '${ApiService.baseApiUrl}/user-data/update-distance'; 
+  
+  // New Diamond URLs
+  static const String _simulateTopUpUrl = '${ApiService.baseApiUrl}/user-data/simulate-topup'; 
+  static const String _convertDiamondUrl = '${ApiService.baseApiUrl}/user-data/convert-diamond'; 
 
   // Fungsi untuk mengambil data ringkasan pengguna (digunakan MapScreen)
   Future<UserSummary?> fetchUserSummary() async {
@@ -124,6 +130,44 @@ class UserService {
     } catch (e) {
       print('Network Error (Update Distance): $e');
       return false;
+    }
+  }
+
+  // --- FUNGSI BARU: SIMULASI TOP UP DIAMOND ---
+  Future<String> simulateTopUp(int amount) async {
+    final token = await _authService.getToken();
+    if (token == null) return 'Authentication required.';
+
+    try {
+      final response = await http.post(
+        Uri.parse(_simulateTopUpUrl),
+        headers: {'Content-Type': 'application/json', 'x-auth-token': token},
+        body: jsonEncode({'amount': amount}),
+      );
+      
+      final data = jsonDecode(response.body);
+      return response.statusCode == 200 ? data['msg'] : (data['msg'] ?? 'Top-up failed.');
+    } catch (e) {
+      return 'Network connection error.';
+    }
+  }
+
+  // --- FUNGSI BARU: KONVERSI DIAMOND KE GP ---
+  Future<String> convertDiamond(int amount) async {
+    final token = await _authService.getToken();
+    if (token == null) return 'Authentication required.';
+
+    try {
+      final response = await http.post(
+        Uri.parse(_convertDiamondUrl),
+        headers: {'Content-Type': 'application/json', 'x-auth-token': token},
+        body: jsonEncode({'amount': amount}),
+      );
+      
+      final data = jsonDecode(response.body);
+      return response.statusCode == 200 ? data['msg'] : (data['msg'] ?? 'Conversion failed.');
+    } catch (e) {
+      return 'Network connection error.';
     }
   }
 }
